@@ -1,0 +1,133 @@
+[tool.poetry]
+name = "streaming"
+version = "0.1.0"
+description = ""
+authors = [""]
+readme = "README.md"
+packages = [{include = "streaming"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+avro = "^1.11.1"
+pyyaml = "^6.0"
+fastavro = "^1.7.3"
+cachetools = "^5.3.1"
+
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^6.0.0"
+confluent-kafka = "^2.2.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.black]
+line-length = 120
+target-version = ['py310']
+include = '\.pyi?$'
+exclude = '''
+(
+  /(
+    |\.eggs
+    | \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | \.feature
+    | .*assets/
+    | .*tests/*
+  )/
+)
+'''
+[tool.autoflake]
+in-place = true
+remove-all-unused-imports = true
+ignore-init-module-imports = true
+remove-duplicate-keys = true
+remove-unused-variables = true
+quiet = true
+ignore-pass-after-docstring = true
+exclude = ["test_all.py"]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+use_parentheses = true
+order_by_type = true
+balanced_wrapping = true
+force_grid_wrap = 0
+lines_after_imports = -1
+lines_between_sections = 1
+lines_between_types =  0
+force_alphabetical_sort_within_sections = true
+line_length = 80
+float_to_top = true
+sections = [
+  "FUTURE",
+  "STDLIB",
+  "FIRSTPARTY",
+  "THIRDPARTY",
+  "LOCALFOLDER"
+]
+
+known_standard_library = [
+  "base64",
+  "builtins",
+  "collections",
+  "codecs",
+  "contextlib",
+  "datetime",
+  "enum",
+  "functools",
+  "glob",
+  "importlib",
+  "pyspark",
+  "io",
+  "time",
+  "json",
+  "logging",
+  "operator",
+  "os",
+  "re",
+  "sys",
+  "struct",
+  "textwrap",
+  "tempfile",
+  "typing",
+  "uuid",
+  "urllib"
+]
+known_third_party = [
+  "avro",
+  "boto3",
+  "botocore",
+  "chardet",
+  "confluent-kafka",
+  "dateutil",
+  "fastavro",
+  "pandas",
+  "requests",
+  "pytest",
+  "pytest_bdd",
+  "pytz",
+  "yaml"
+]
+known_local_folder = [
+  "jobs",
+  "helpers",
+  "kafka",
+  "tests",
+  "common",
+  "settings",
+  "steps",
+  "aws",
+  ".docker"
+]
