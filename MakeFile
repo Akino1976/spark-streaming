@@ -1,0 +1,176 @@
+REPOSITORY := -data-streaming
+LOCAL_STACK=2.2.0
+PROJECT_DIR := $(realpath $(CURDIR))
+ENVIRONMENT ?= staging
+REGION ?= eu-west-1
+AWS_REGION ?= eu-west-1
+TERRAFORM_PATH ?= $(REGION)/$(ENVIRONMENT)
+
+CURRENT_DATE := $(shell echo `date +'%Y-%m-%d'`)
+VERSION ?= commit_$(shell git rev-parse --short HEAD)
+POETRY_FILE := poetry.lock pyproject.toml
+TERRAFORM := ./infrastructure
+TERRAFORM_VERSION := 1.5.2
+COMPOSE_DEFAULT_FLAGS := -f docker-compose.yaml
+COMPOSE_TEST_FLAGS := $(COMPOSE_DEFAULT_FLAGS) -f docker-compose-test.yaml -f docker-compose-framework.yaml
+LOCAL_STACK_PORT := $(shell docker ps --filter expose=4566 --format {{.ID}})
+
+export CURRENT_DATE
+export LOCAL_STACK
+export REPOSITORY
+export REGION
+export AWS_REGION
+export TERRAFORM_PATH
+export VERSION
+export PROJECT_DIR
+export ENVIRONMENT
+export TERRAFORM_VERSION
+export ARTIFACTORY_URL
+export BKF_TERRAFORM_ENV_FILE
+
+###########################################################################
+# cleaning and env variables
+###########################################################################
+check-container:
+ifdef LOCAL_STACK_PORT
+	@echo "=> remove localstack container"
+	@docker stop $(LOCAL_STACK_PORT)
+	@docker rm $(LOCAL_STACK_PORT)
+else
+	@echo "=> nothing to for containers be done"
+endif
+
+ifndef BKF_TERRAFORM_ENV_FILE
+ifdef JENKINS_URL
+BKF_TERRAFORM_ENV_FILE=.enviroment/cicd.env
+else
+BKF_TERRAFORM_ENV_FILE=.enviroment/local.env
+endif
+export BKF_TERRAFORM_ENV_FILE
+endif
+
+###########################################################################
+# tests commands
+###########################################################################
+BUILD_DIR := $(PROJECT_DIR)
+DESTINATION_DIRS := ./tests/system .docker/glue_integrater
+PY_SOURCES = $(patsubst %,$(BUILD_DIR)/%, pyproject.toml)
+POETRY_SOURCES = $(patsubst %,$(BUILD_DIR)/%, poetry.lock)
+PY_PROJECT = $(foreach dir, $(DESTINATION_DIRS), $(patsubst %, $(BUILD_DIR)/$(dir)/%, pyproject.toml))
+POETRY_PROJECT = $(foreach dir, $(DESTINATION_DIRS), $(patsubst %, $(BUILD_DIR)/$(dir)/%, poetry.lock))
+
+.SECONDEXPANSION:
+$(PY_PROJECT) $(POETRY_PROJECT): $(BUILD_DIR)/$$(notdir $$@)
+	@echo "=> Moving $< to $@"
+	@cp $< $@
+
+copy-files: $(PY_PROJECT) $(POETRY_PROJECT)
+
+
+glue-image: copy-files
+	docker-compose $(COMPOSE_TEST_FLAGS) run --rm glue
+
+glue-packer: copy-files run-glue-packer
+create-network:
+	@echo "=>  Creating network 'streaming_bridge'"
+	@docker network create -d bridge streaming_bridge 2>/dev/null || true
+
+build-%:
+	docker-compose $(COMPOSE_TEST_FLAGS) build $*
+
+run-%: check-container
+	docker-compose $(COMPOSE_TEST_FLAGS) run --rm $*
+
+testing-environment: copy-files check-container run-aws-mock
+.PHONY: systemtests
+systemtests: testing-environment
+	docker-compose $(COMPOSE_TEST_FLAGS) run --rm systemtests
+
+.PHONY: systemtests-watch
+systemtests-watch: testing-environment
+	docker-compose $(COMPOSE_TEST_FLAGS) run --rm systemtests-watch || true
+
+glue-image: copy-files run-glue
+glue-%: copy-files
+	@docker-compose $(COMPOSE_TEST_FLAGS) run --rm glue-$*
+###########################################################################
+# terraform commands
+###########################################################################
+terraform-%:
+	@echo "=>  Check validate|fmt command"
+	@docker-compose -f docker-compose.yaml run terraform $* -upgrade
+
+tf-plan:
+	@echo "=>  Main make plan into environment: [${ENVIRONMENT}]"
+	@docker-compose -f docker-compose.yaml run terraform validate
+	@docker-compose -f docker-compose.yaml run terraform plan \
+		-lock=false -no-color \
+		-var-file ./$(AWS_REGION)/$(ENVIRONMENT)/terraform.tfvars
+
+tf-planfile:
+	@echo "=>  Main make environment: [${ENVIRONMENT}, ${AWS_REGION}]"
+	@echo "=>  Using BKF_TERRAFORM_ENV_FILE: ${BKF_TERRAFORM_ENV_FILE}"
+	@docker-compose -f docker-compose.yaml run terraform init -upgrade \
+		-reconfigure -backend-config=./${AWS_REGION}/${ENVIRONMENT}/backend
+	@echo "=>  Plan into file [${ENVIRONMENT}]"
+	@docker-compose -f docker-compose.yaml run terraform plan \
+		-lock=false -no-color \
+		-var-file ./$(AWS_REGION)/$(ENVIRONMENT)/terraform.tfvars \
+		-out=./$(AWS_REGION)/$(ENVIRONMENT)/planfile
+
+tf-applyfile:
+	@echo "=>  Apply planfile for environment: [${ENVIRONMENT}]"
+	@echo "=>  Using BKF_TERRAFORM_ENV_FILE: ${BKF_TERRAFORM_ENV_FILE}"
+	@docker-compose -f docker-compose.yaml run terraform apply \
+		-lock=false "./$(AWS_REGION)/$(ENVIRONMENT)/planfile"
+
+tf-destroy:
+	@echo "=>  Destroy environment: [${ENVIRONMENT}]"
+	@docker-compose -f docker-compose.yaml run terraform init -upgrade\
+		-reconfigure -backend-config=./${ENVIRONMENT}/backend
+	@docker-compose -f docker-compose.yaml run terraform destroy \
+		-var-file ./${ENVIRONMENT}/terraform.tfvars
+
+refresh:
+	terraform -chdir=$(TERRAFORM) refresh -var-file ./${ENVIRONMENT}/terraform.tfvars
+
+state-file-%:
+	@echo "=>  deploy global changes to: [${ENVIRONMENT}]"
+	@docker-compose -f docker-compose.yaml \
+		run terraform -chdir=/infrastructure/global/${ENVIRONMENT} $* \
+			-var aws_account=${AWS_PROFILE}
+
+tf-%:
+	@printf "\033[32m#%.0s\033[0m" {1..100}
+	@echo "=>  Run $* : [${TERRAFORM_PATH}]"
+	@printf "\033[32m#%.0s\033[0m" {1..100}
+	@docker-compose -f docker-compose.yaml run terraform $* \
+		-reconfigure -backend-config=./$(AWS_REGION)/$(ENVIRONMENT)/backend
+
+###########################################################################
+# docker commands
+###########################################################################
+stop-all-containers:
+	docker ps -q | xargs -I@ docker stop @
+
+clear-all-containers: stop-all-containers
+	docker ps -aq | xargs -I@ docker rm @
+
+clear-volumes: clear-all-containers
+	docker volume ls -q | xargs -I@ docker volume rm @
+
+clear-images: clear-volumes
+	docker images -q | uniq | xargs -I@ docker rmi -f @
+
+stop-db:
+	docker ps -aqf ancestor=-data-streaming-postgres| xargs -I@ sh -c 'docker stop @ && docker rm @'
+
+clear-db: stop-db
+	docker image ls -aqf=reference='$(REPOSITORY)-postgres' | xargs -I@ docker rmi -f @ || true
+
+clear-systemtests: clear-db
+	docker image ls -aqf=reference='$(REPOSITORY)-systemtests-watch' | xargs -I@ docker rmi -f @ || true
+	docker image ls -aqf=reference='$(REPOSITORY)-systemtests' | xargs -I@ docker rmi -f @ || true
+
+start-glue:
+	docker exec -it $(docker ps -aqf ancestor=-data-streaming-systemtests-watch) bash
