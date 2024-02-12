@@ -1,0 +1,89 @@
+version: "3.8"
+networks:
+  streaming_bridge:
+    external: false
+    name: streaming_bridge
+
+services:
+  glue:
+    image: ${REPOSITORY}-glue-test
+    build:
+      context: .
+      dockerfile: ./tests/system/Dockerfile
+      cache_from:
+        - ${REPOSITORY}-glue-test
+    networks:
+      - streaming_bridge
+    entrypoint: /home/glue_user/spark/bin/pyspark
+    environment:
+      AWS_PROFILE: ${PROFILE_NAME:-localstack}
+      MOCK_AWS_HOST: host.docker.internal:4566
+      AWS_REGION: "eu-west-1"
+      DISABLE_SSL: "true"
+      ENVIRONMENT: staging
+      PYSPARK_DRIVER_PYTHON: ipython
+    ports:
+      - 4040:4040
+      - 18080:18080
+    volumes:
+      - ~/.aws/:/home/glue_user/.aws:ro
+
+  systemtests:
+    container_name: systemtests-${REPOSITORY}:${VERSION}
+    networks:
+      - streaming_bridge
+    build:
+      context: .
+      dockerfile: ./tests/system/Dockerfile
+      cache_from:
+        - systemtests-${REPOSITORY}:${VERSION}
+    depends_on:
+      - connect1
+      - schema-registry
+      - akhq
+      - aws-mock
+      - kafka-broker
+    environment:
+      SCHEMA_REGISTRY_LISTENERS: http://schema-registry:8081
+      KAFKA_BROKER: kafka-broker:29092
+      #PYSPARK_DRIVER_PYTHON: ipython
+      PYTHONDONTWRITEBYTECODE: 1
+      AWS_REGION: eu-west-1
+      AWS_PROFILE: localstack
+      MOCK_AWS_HOST: localstack:4566
+      ENVIRONMENT: docker
+    volumes:
+      - ./tests/shared:/home/glue_user/workspace/tests/shared
+      - ./tests/system:/home/glue_user/workspace/tests/system
+      - ./tests/shared/awsmock-credentials:/home/glue_user/.aws/credentials
+
+  systemtests-watch:
+    container_name: systemtests-${REPOSITORY}-watch:${VERSION}
+    networks:
+      - streaming_bridge
+    build:
+      context: .
+      dockerfile: ./tests/system/Dockerfile
+      cache_from:
+        - systemtests-${REPOSITORY}-watch:${VERSION}
+    depends_on:
+      - connect1
+      - schema-registry
+      - akhq
+      - aws-mock
+      - kafka-broker
+    entrypoint: ptw
+    command: --ext=py,feature --ignore=/.cache/** --config pytest.cfg -p --pdb
+    environment:
+      SCHEMA_REGISTRY_LISTENERS: http://schema-registry:8081
+      KAFKA_BROKER: kafka-broker:29092
+      #PYSPARK_DRIVER_PYTHON: ipython
+      PYTHONDONTWRITEBYTECODE: 1
+      AWS_REGION: eu-west-1
+      AWS_PROFILE: localstack
+      MOCK_AWS_HOST: localstack:4566
+      ENVIRONMENT: docker
+    volumes:
+      - ./tests/shared:/home/glue_user/workspace/tests/shared
+      - ./tests/system:/home/glue_user/workspace/tests/system
+      - ./tests/shared/awsmock-credentials:/home/glue_user/.aws/credentials
