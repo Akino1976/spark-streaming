@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: bookkeeping-data-streaming
+
+Parameters:
+
+  Version:
+    Description: The version of the packages
+    Type: String
+    Default: docker
+
+  Environment:
+    Description: Environment to deploy to.
+    Type: String
+    Default: docker
+    AllowedValues:
+      - docker
+
+  ServiceName:
+    Description: The name of the service
+    Type: String
+    Default: bookkeeping-data-streaming
+
+Mappings:
+
+  EnvMap:
+    docker:
+      GlobelBucket: finance-data-global-resource-docker
+      EuBucket: finance-data-landing-docker-eu
+      ApBucket: finance-data-landing-docker-ap
+      EuStreamingBucket: finance-data-streaming-docker-eu-west-1
+      ApStreamingBucket: finance-data-streaming-docker-ap-southeast-2
+      TransFormedBucket: finance-data-transformed-docker
+
+Resources:
+  GlobelBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !FindInMap [EnvMap, !Ref Environment, GlobelBucket]
+      AccessControl: BucketOwnerFullControl
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: false
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  TransFormedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !FindInMap [EnvMap, !Ref Environment, TransFormedBucket]
+      AccessControl: BucketOwnerFullControl
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: false
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+
+  EuBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !FindInMap [EnvMap, !Ref Environment, EuBucket]
+      AccessControl: BucketOwnerFullControl
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: false
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  ApBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !FindInMap [EnvMap, !Ref Environment, ApBucket]
+      AccessControl: BucketOwnerFullControl
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: false
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  ApStreamingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !FindInMap [EnvMap, !Ref Environment, ApStreamingBucket]
+      AccessControl: BucketOwnerFullControl
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: false
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  EuStreamingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !FindInMap [EnvMap, !Ref Environment, EuStreamingBucket]
+      AccessControl: BucketOwnerFullControl
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: false
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  GlobelBucket:
+    Description: Destination Global
+    Value: !Ref GlobelBucket
+  EuBucket:
+    Description: Destination EUbucket
+    Value: !Ref EuBucket
+  ApBucket:
+    Description: Destination ApBucket
+    Value: !Ref ApBucket
+  ApStreamingBucket:
+    Description: Destination ApBucket
+    Value: !Ref ApStreamingBucket
+  EuStreamingBucket:
+    Description: Destination ApBucket
+    Value: !Ref EuStreamingBucket
+  TransFormedBucket:
+    Description: Destination Transformed
+    Value: !Ref TransFormedBucket
