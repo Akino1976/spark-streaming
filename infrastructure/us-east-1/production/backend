@@ -1,0 +1,3 @@
+key     = "data-streaming/us-east-1/streaming-service.tfstate"
+bucket  = "global-state-production"
+region  = "eu-west-1"

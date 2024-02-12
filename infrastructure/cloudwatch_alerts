@@ -1,0 +1,27 @@
+resource "aws_cloudwatch_log_metric_filter" "streamng_metric" {
+  name           = "data-streaming-alarm-${var.environment}"
+  pattern        = "ERROR GlueLogger"
+  log_group_name = module.cloudwatch_streaming_log_group.cloudwatch_name
+
+  metric_transformation {
+    name      = "data-streaming-alarm-${var.environment}"
+    namespace = "DataMetricStreaming${var.environment}"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "streaming_alarms" {
+  alarm_name          = "alarm-streaming-data-${var.environment}"
+  metric_name         = "data-streaming-alarm-${var.environment}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  datapoints_to_alarm = "1"
+  namespace           = "DataMetricStreaming${var.environment}"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_actions = [
+    data.aws_sns_topic.datadog_topic.id
+  ]
+  alarm_description = "GlueLogger error on streaming"
+}

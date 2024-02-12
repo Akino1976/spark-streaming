@@ -1,0 +1,26 @@
+resource "aws_athena_workgroup" "landing_wg" {
+  name = "${var.namespace}-landing-wg-${var.environment}-${var.region}"
+
+  configuration {
+    enforce_workgroup_configuration = true
+    engine_version {
+      selected_engine_version = "Athena engine version 3"
+    }
+  }
+  force_destroy = true
+  tags          = local.tags
+}
+
+resource "aws_glue_catalog_database" "landing_database" {
+  name = "finance_data_landing_${var.environment}_${var.region}"
+}
+resource "aws_athena_named_query" "athena_table" {
+  for_each  = var.sql_schema
+  name      = "finance_${each.key}_table"
+  workgroup = aws_athena_workgroup.landing_wg.id
+  database  = aws_glue_catalog_database.landing_database.id
+  query = templatefile("${path.module}/athena_tables/${each.value["filename"]}", {
+    table_name = "${split(":", aws_glue_catalog_database.landing_database.id)[1]}.${each.value["tablename"]}",
+    location   = "s3://${aws_s3_bucket.s3_spark_streaming_bucket.id}/warehouse/${each.value["tablename"]}/"
+  })
+}
