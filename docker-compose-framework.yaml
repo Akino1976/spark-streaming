@@ -1,0 +1,160 @@
+version: "3.8"
+networks:
+  streaming_bridge:
+    external: false
+    name: streaming_bridge
+
+services:
+  schema-registry:
+    image: confluentinc/cp-schema-registry
+    container_name: schema-registry
+    restart: always
+    networks:
+      - streaming_bridge
+    ports:
+      - 8081:8081
+    depends_on:
+      - zookeeper
+      - kafka-broker
+      - akhq
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: zookeeper:2181
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka-broker:29092
+
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: zookeeper
+    restart: always
+    ports:
+      - "2181:2181"
+    networks:
+      - streaming_bridge
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+
+  kafka-broker:
+    image: wurstmeister/kafka
+    container_name: kafka-broker
+    restart: unless-stopped
+    networks:
+      - streaming_bridge
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092 #within docker on kafka-broker:29092, outside on localhost:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      #KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 100
+
+  connect1:
+    image: confluentinc/cp-kafka-connect
+    #image: confluentinc/cp-kafka-connect
+    container_name: connect1
+    depends_on:
+      - zookeeper
+      - kafka-broker
+      - schema-registry
+    ports:
+      - 8083:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "kafka-broker:29092"
+      #CONNECT_REST_PORT: 8083
+      CONNECT_REST_ADVERTISED_HOST_NAME: "connect1"
+      # listen on HTTPS:8083
+      # see https://cwiki.apache.org/confluence/display/KAFKA/KIP-208%3A+Add+SSL+support+to+Kafka+Connect+REST+interface
+      CONNECT_LISTENERS: "https://0.0.0.0:8083"
+
+      # add basic auth with username+password
+      # see https://stackoverflow.com/questions/45250575/securing-access-to-rest-api-of-kafka-connect
+      CONNECT_REST_EXTENSION_CLASSES: org.apache.kafka.connect.rest.basic.auth.extension.BasicAuthSecurityRestExtension
+      CONNECT_CONFIG_PROVIDERS: file
+      CONNECT_CONFIG_PROVIDERS_FILE_CLASS: org.apache.kafka.common.config.provider.FileConfigProvider
+      CONNECT_GROUP_ID: connect1-group
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect1-group-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect1-group-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect1-group-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_LOG4J_ROOT_LOGLEVEL: "INFO"
+      CONNECT_LOG4J_LOGGERS: "org.apache.kafka.connect.runtime.rest=WARN,org.reflections=ERROR"
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+    command:
+      - bash
+      - -c
+      - |
+        echo "Installing Connectors"
+        confluent-hub install --no-prompt confluentinc/kafka-connect-datagen:latest
+        confluent-hub install --no-prompt confluentinc/kafka-connect-s3:latest
+        confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:latest
+        #
+        echo "Launching Kafka Connect"
+        /etc/confluent/docker/run
+
+  aws-mock:
+    container_name: aws-cli-docker-${REPOSITORY}
+    image: aws-cli-docker-${REPOSITORY}
+    working_dir: /data
+    build:
+      context: ./.docker/aws
+      dockerfile: Dockerfile
+      cache_from:
+        - aws-cli-docker-${REPOSITORY}
+    environment:
+      AWS_ACCESS_KEY_ID: none
+      AWS_SECRET_ACCESS_KEY: none
+      AWS_REGION: ${AWS_REGION-eu-west-1}
+      SERVICENAME: ${REPOSITORY}
+      ENVIRONMENT: docker
+    networks:
+      - streaming_bridge
+    depends_on:
+      - localstack
+    volumes:
+      - ./.docker/aws:/data
+
+  localstack:
+    image: localstack/localstack:${LOCAL_STACK}
+    environment:
+      - SERVICES=${SERVICES-s3,cloudformation}
+      - HOSTNAME=${HOSTNAME-localhost}
+      - HOSTNAME_EXTERNAL=${HOSTNAME_EXTERNAL-localhost}
+      - DEFAULT_REGION=${DEFAULT_REGION-eu-west-1}
+      - DEBUG=${DEBUG-1}
+    ports:
+      - "4566:4566"
+    networks:
+      - streaming_bridge
+
+  akhq:
+    image: tchiotludo/akhq
+    container_name: akhq
+    networks:
+      - streaming_bridge
+    ports:
+      - 8080:8080
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            docker-kafka:
+              properties:
+                bootstrap.servers: "kafka-broker:29092"
+              schema-registry:
+                url: "http://schema-registry:8081"
