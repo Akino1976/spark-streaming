@@ -1,0 +1,17 @@
+properties:
+  checkpoint_location: !Substitute s3a://streaming-{ENVIRONMENT}-eu-west-1/bkf/backfill/metadata
+  parallel_events:
+    environment: ["docker", "production"]
+    destination: !Substitute s3a://landing-{ENVIRONMENT}-eu/streaming/backfill/parallel
+    extraction: kafka_metadata_topic
+  landing_zone:
+    destination: !Substitute s3a://landing-{ENVIRONMENT}-eu/streaming/bkf/backfill
+    columns:
+      - year
+      - month
+      - ts
+    partition: ["year", "month", "ts"]
+  kafka:
+    docker:
+      kafka.bootstrap.servers:
+        - kafka-broker:29092

@@ -1,0 +1,15 @@
+properties:
+  checkpoint_location: !Substitute s3a://streaming-{ENVIRONMENT}-eu-west-1/bkf/producer/ack/metadata
+  processing_time:
+    docker: "15 seconds"
+    staging: "5 minute"
+    production: "10 minute"
+  load_path: !Substitute s3://transformed-{ENVIRONMENT}/ack/region=eu
+  kafka:
+    docker:
+      kafka.bootstrap.servers:
+        - kafka-broker:29092
+      maxFilesPerTrigger: 40
+      failOnDataLoss: true
+      compression.type: gzip
+      allow.auto.create.topics: false
