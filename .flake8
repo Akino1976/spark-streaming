@@ -1,0 +1,18 @@
+[flake8]
+max-line-length = 120
+show_source = True
+statistics = True
+ignore = E203, E266, E501, W503, F403, F401, F821, W605, C901
+select = B,C,E,F,W,T4,B9
+max-complexity = 18
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    ./jobs/glue_example.py
+    tests/*,
+    tests/shared/*
+    jobs/*,
+    fixtures.py,
+    virtualenv_run
