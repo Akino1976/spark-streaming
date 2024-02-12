@@ -1,0 +1,86 @@
+version: "3.8"
+
+services:
+  terraform:
+    image: hashicorp/terraform:${TERRAFORM_VERSION}
+    environment:
+      AWS_REGION: ${AWS_REGION:-eu-west-1}
+      ENVIRONMENT: ${ENVIRONMENT:-None}
+      TERRAFORM_PATH: ${TERRAFORM_PATH:-None}
+    env_file:
+      - ${BKF_TERRAFORM_ENV_FILE}
+    working_dir: /infrastructure
+    entrypoint: terraform
+    volumes:
+      - ./infrastructure:/infrastructure
+      - ~/.aws/:/root/.aws:ro
+
+
+  bookkeeping-glue:
+    container_name: ${ARTIFACTORY_URL}/fin-data-integration/${REPOSITORY}-glue:latest
+    image: ${ARTIFACTORY_URL}/fin-data-integration/${REPOSITORY}-glue:latest
+    build:
+      context: .
+      dockerfile: ./.docker/glue/Dockerfile
+      cache_from:
+        - ${ARTIFACTORY_URL}/fin-data-integration/${REPOSITORY}-glue:v1
+    environment:
+      MOCK_AWS_HOST: host.docker.internal:4566
+      AWS_REGION: "eu-west-1"
+      DISABLE_SSL: "true"
+      ENVIRONMENT: docker
+      #PYSPARK_DRIVER_PYTHON: ipython
+    ports:
+      - 4040:4040
+      - 18080:18080
+
+  glue-upload:
+    image: glue-integrater-${ENVIRONMENT}
+    command: run_upload.py upload-handler
+    build:
+      context: .
+      dockerfile: .docker/glue_integrater/Dockerfile
+      cache_from:
+        - glue-integrater-${ENVIRONMENT}
+    env_file:
+      - ${BKF_TERRAFORM_ENV_FILE}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-None}
+      AWS_REGION: ${AWS_REGION}
+      GLUE_BUCKET: finance-data-streaming-${ENVIRONMENT}-${AWS_REGION}
+    volumes:
+      - ~/.aws/:/home/glue_user/.aws:ro
+
+  glue-integrater:
+    image: glue-integrater-${ENVIRONMENT}
+    command: run_upload.py integration-handler
+    build:
+      context: .
+      dockerfile: .docker/glue_integrater/Dockerfile
+      cache_from:
+        - glue-integrater-${ENVIRONMENT}
+    env_file:
+      - ${BKF_TERRAFORM_ENV_FILE}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-None}
+      AWS_REGION: ${AWS_REGION}
+      GLUE_BUCKET: finance-data-streaming-${ENVIRONMENT}
+    volumes:
+      - ~/.aws/:/home/glue_user/.aws:ro
+
+  glue-starter:
+    image: glue-integrater-${ENVIRONMENT}
+    command: run_upload.py glue-handler
+    build:
+      context: .
+      dockerfile: .docker/glue_integrater/Dockerfile
+      cache_from:
+        - glue-integrater-${ENVIRONMENT}
+    env_file:
+      - ${BKF_TERRAFORM_ENV_FILE}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-None}
+      AWS_REGION: ${AWS_REGION}
+      GLUE_BUCKET: finance-data-streaming-${ENVIRONMENT}
+    volumes:
+      - ~/.aws/:/home/glue_user/.aws:ro
